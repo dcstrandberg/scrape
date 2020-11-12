@@ -3,7 +3,7 @@
 #Let's first pull just a single tweet and save it in csv?
 #import the twitter_scrape module
 
-from twitter_scraper import get_tweets
+'''from twitter_scraper import get_tweets
 
 #Open a file for saving the data
 #outfile = open("./tweet_data.csv", "w")
@@ -20,3 +20,6 @@ for tweet in get_tweets('twitter', pages=1):
 
 #close the file
 #outfile.close()
+
+
+'''
