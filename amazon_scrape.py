@@ -1,5 +1,6 @@
 #import time
 #TODO: Add some form of analysis?, 
+#Add reading in the search terms from a file or something, so it's easily editable?
 #Add best seller flag?
 #Add check on whether there was ANY data pulled or if it appears to be a captcha page
     #It should try a new proxy, and if it tries... 100 proxies or something, then it should error and send a message to an email that there's an issue
@@ -37,11 +38,11 @@ positions=[] #List of where the product was positioned in the search
 pages=[] #List to store ratings of the product
 
 #Declare the request variables that determine how many requests will get made -- eventually these will be fed as arguments to the request function from a wrapper function
-no_pages = 2#4
-#keywords = ['Soda', 'Pop', 'Water', 'Sports Drinks', 'Coffee', 'Cereal', 'Snack Bars', 'Chips', 'Snacks', 'Contact Lenses', 'Coke', 'Fanta', 
-#   'Sprite', 'Powerade', 'Frosted Flakes', 'Special K', 'Froot Loops', 'Raisin Bran', 'Pringles', 'Cheez It', 'Rice Krispies', 'Rice Krispies Treats', 
-#   'Pop Tarts', 'Acuvue', 'Oasys', 'Pet Food', 'Dog Food', 'Cat Food']
-keywords = ['cereal']
+no_pages = 4
+keywords = ['Soda', 'Water', 'Sports Drinks', 'Coffee', 'Cereal', 'Snack Bars', 'Chips', 'Snacks', 'Contact Lenses', 'Coke', 'Fanta', 
+   'Sprite', 'Powerade', 'Frosted Flakes', 'Special K', 'Froot Loops', 'Raisin Bran', 'Pringles', 'Cheez It', 'Rice Krispies', 'Rice Krispies Treats', 
+   'Pop Tarts', 'Acuvue', 'Oasys', 'Pet Food', 'Dog Food', 'Cat Food']
+#keywords = ['cereal']
 
 #Re organizing things
 # - putting proxy cycling into its own function
