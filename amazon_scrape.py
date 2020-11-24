@@ -2,8 +2,6 @@
 #TODO: Add some form of analysis?, 
 #Add reading in the search terms from a file or something, so it's easily editable?
 #Add best seller flag?
-#Add check on whether there was ANY data pulled or if it appears to be a captcha page
-    #It should try a new proxy, and if it tries... 100 proxies or something, then it should error and send a message to an email that there's an issue
 #Test out using sentiment analysis to tag the data -- brand name / pack size / pack count / $ per oz
 #Add more sources: instacart, walmart, etc. Then create wrapper program that calls each of these subroutines
 
@@ -18,6 +16,7 @@ import time
 from multiprocessing import Process, Queue, Pool, Manager
 import threading
 import sys
+from send_email import send_email
 
 #Declare the variables that will be needed to run the request loop
 proxies = scrapeProxyList() 
@@ -238,3 +237,12 @@ if __name__ == "__main__":
         'Regular Price:':regularPrices, 'On Sale?':onSales, 'Amazon Choice':amazonChoices, 'Sponsored':sponsoredList, 'List Position':positions, 'Page':pages})
     #print(df)
     df.to_csv('./amazon_data/' + str(date.today()) + '-SearchList.csv', index=False, encoding='utf-8')
+
+    
+    recipient = 'david@4sightassociates.com'
+    subject = 'Daily Web Scrape Update'
+    message = "Web scraping finished with " + str(qcount) + " entries recorded."
+
+
+    send_email(recipient, subject, message)
+    #print("Message sent")

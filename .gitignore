@@ -1,2 +1,3 @@
 #Ignore the email file because it's got server info
 send_email.py
+*.pyc
