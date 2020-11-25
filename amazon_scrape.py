@@ -43,14 +43,10 @@ keywords = ['Soda', 'Water', 'Sports Drinks', 'Coffee', 'Cereal', 'Snack Bars', 
    'Pop Tarts', 'Acuvue', 'Oasys', 'Pet Food', 'Dog Food', 'Cat Food']
 #keywords = ['cereal']
 
-#Re organizing things
-# - putting proxy cycling into its own function
-# - putting request in its own function, then the different soups search into their own function?
-# - putting search term & page number into one list that can be cycled through so all the things can be threaded separately
-
 
 def get_data(keyword, pageNo,q):  
     #use this to access the global proxyCounter variable
+    #Need to think of a better way to do this, because it's definitely not actually cycling -- probably should scrape more than one page? 
     global proxyCounter
     global proxies
 
@@ -184,9 +180,9 @@ def get_data(keyword, pageNo,q):
                 carouselCounter += 1
              
     #DEBUGGING -- if this is page 1 of the first loop, just save the full html file
-    if pageNo == 1 and keyword == 'cereal':
-        with open('cereal_html.html', 'w', encoding='utf-8') as outfile:
-            outfile.write(str(soup))
+    #if pageNo == 1 and keyword == 'cereal':
+        #with open('cereal_html.html', 'w', encoding='utf-8') as outfile:
+            #outfile.write(str(soup))
 
 
 results = []
@@ -194,51 +190,60 @@ if __name__ == "__main__":
     m = Manager()
     q = m.Queue() # use this manager Queue instead of multiprocessing Queue as that causes error
     
-    
+    #This is where we create the keyword / page dictionary to loop through, so we can truly be parallel with execution
+    searchList = []
 
-
-    #Adding a for loop to cycle through the keywords -- not sure if a queue can work inside a for loop
     for word in keywords:
-        p = {}    
+        for i in range (1, no_pages):
+            searchList.append( {'word': word, 'page': i} )
 
-        for i in range(1,no_pages):            
-            print("starting process: ",proxyCounter)
-            p[i] = Process(target=get_data, args=(word, i, q))
-            p[i].start()
 
-            #increment ProxyCounter
-            proxyCounter += 1
+    p = {}    
 
-            # join should be done in seperate for loop 
-            # reason being that once we join within previous for loop, join for p1 will start working
-            # and hence will not allow the code to run after one iteration till that join is complete, ie.
-            # the thread which is started as p1 is completed, so it essentially becomes a serial work instead of 
-            # parallel
-        for i in range(1,no_pages):
-            p[i].join()
-        while q.empty() is not True:
-            qcount = qcount+1
-            queue_top = q.get()
-            searchTerms.append(queue_top[0])
-            dates.append(queue_top[1])
-            products.append(queue_top[2])
-            prices.append(queue_top[3])
-            regularPrices.append(queue_top[4])
-            onSales.append(queue_top[5])
-            amazonChoices.append(queue_top[6])
-            sponsoredList.append(queue_top[7])
-            positions.append(queue_top[8])
-            pages.append(queue_top[9])
+    for i in range(len(searchList)):            
+        print("starting process: ",proxyCounter)
+        p[i] = Process(target=get_data, args=(searchList[i]['word'], searchList[i]['page'], q))
+        p[i].start()
+
+        #increment ProxyCounter
+        proxyCounter += 1
+
+        # join should be done in seperate for loop 
+        # reason being that once we join within previous for loop, join for p1 will start working
+        # and hence will not allow the code to run after one iteration till that join is complete, ie.
+        # the thread which is started as p1 is completed, so it essentially becomes a serial work instead of 
+        # parallel
+    for i in range(len(searchList)):
+        p[i].join()
+    while q.empty() is not True:
+        qcount = qcount+1
+        queue_top = q.get()
+        searchTerms.append(queue_top[0])
+        dates.append(queue_top[1])
+        products.append(queue_top[2])
+        prices.append(queue_top[3])
+        regularPrices.append(queue_top[4])
+        onSales.append(queue_top[5])
+        amazonChoices.append(queue_top[6])
+        sponsoredList.append(queue_top[7])
+        positions.append(queue_top[8])
+        pages.append(queue_top[9])
 
     #Only run once everything is done        
     print("total time taken: ", str(time.time()-startTime), " qcount: ", qcount)
     #print(q.get())
+    
+    #Clean up and tag the data (Cleaning up maybe should have gone in the request loop)
+
+
     df = pd.DataFrame({'Keyword':searchTerms,'Date':dates, 'Product Name':products, 'Price':prices, 
         'Regular Price:':regularPrices, 'On Sale?':onSales, 'Amazon Choice':amazonChoices, 'Sponsored':sponsoredList, 'List Position':positions, 'Page':pages})
     #print(df)
     df.to_csv('./amazon_data/' + str(date.today()) + '-SearchList.csv', index=False, encoding='utf-8')
 
     
+
+    #Send completion email so we can make sure data got recorded
     recipient = 'david@4sightassociates.com'
     subject = 'Daily Web Scrape Update'
     message = "Web scraping finished with " + str(qcount) + " entries recorded."
