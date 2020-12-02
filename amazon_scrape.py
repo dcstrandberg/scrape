@@ -10,7 +10,8 @@
 #Test out using sentiment analysis to tag the data -- brand name / pack size / pack count / $ per oz
 #Add more sources: instacart, walmart, etc. Then create wrapper program that calls each of these subroutines
 
-from proxy_list_scrape import scrapeProxyList, getProxyList, updateProxyFile
+#from proxy_list_scrape import scrapeProxyList, getProxyList, updateProxyFile
+import proxy_list_scrape as pls
 from datetime import date
 import re
 import random
@@ -63,6 +64,9 @@ keywords = ['Soda', 'Water', 'Sports Drinks', 'Coffee', 'Cereal', 'Snack Bars', 
     'Pop Tarts', 'Acuvue', 'Oasys', 'Pet Food', 'Dog Food', 'Cat Food']
 #keywords = ['cereal']
 
+#THIS IS WHERE I SHOULD DECLARE A FUNCTION TO GENERATE THE PROXY LIST
+###THEN IT SHOULD STORE THE GLOBAL LIST
+###AND HAVE METHODS TO CALL/UPDATE IT
 
 #Function for getting a proxy
 def getProxy(proxyList):
@@ -80,7 +84,7 @@ def removeProxy(proxyList, proxy):
     if len(proxyList) < 1: 
         print("Proxy List Too Short: " + str(proxyList))
         print("Refreshing proxy List")
-        proxyList.extend( scrapeProxyList() )
+        proxyList.extend( pls.main() )
 
 
 def get_data(keyword, pageNo, q, proxyCounter, proxyList, tagging_df):  
