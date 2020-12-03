@@ -1,4 +1,3 @@
-#import time
 #TODO: Add some form of analysis?, 
 #Edit proxy cycling, so the process originator loop passes the # of proxy to use
 #Additionally, need to add a fail state -- raised exception if there's more than x loops of proxy or captcha cycling....
@@ -11,7 +10,7 @@
 #Add more sources: instacart, walmart, etc. Then create wrapper program that calls each of these subroutines
 
 #from proxy_list_scrape import scrapeProxyList, getProxyList, updateProxyFile
-import proxy_list_scrape as pls
+from proxy_list_scrape import scrapeProxyList
 from datetime import date
 import re
 import random
@@ -19,13 +18,12 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 import time
-from multiprocessing import Process, Queue, Pool, Manager
-import threading
+from multiprocessing import Process, Queue, Pool, Manager, Lock
 from send_email import send_email
 from data_tagging import tag_data, get_tag_dicts
 
 #Declare the variables that will be needed to run the request loop
-#proxyList = scrapeProxyList()
+proxyList = []
 #proxyList.append(scrapeProxyList())
 proxyCounter = 0
 startTime = time.time()
@@ -50,12 +48,6 @@ variants=[] #List to store tagged variants of the product
 packTypes=[] #List to store tagged pack types of the product
 packCounts=[] #List to store tagged pack counts of the product
 packSizes=[] #List to store tagged pack sizes of the product
-#brandCount = 0 #Counter of how many brands were tagged succesfully
-#mfgCount = 0 #Counter of how many MFGs were tagged succesfully
-#variantCount = 0 #Counter of how many variants were tagged succesfully
-#packCount = 0 #Counter of how many pack types were tagged succesfully
-#countCount = 0 #Counter of how many pack counts were tagged succesfully
-#sizeCount = 0 #Counter of how many pack sizes were tagged succesfully
 
 #Declare the request variables that determine how many requests will get made -- eventually these will be fed as arguments to the request function from a wrapper function
 no_pages = 4
@@ -69,25 +61,43 @@ keywords = ['Soda', 'Water', 'Sports Drinks', 'Coffee', 'Cereal', 'Snack Bars', 
 ###AND HAVE METHODS TO CALL/UPDATE IT
 
 #Function for getting a proxy
+def generateProxyList(lock):
+    #global proxyList
+    lock.acquire()
+    try:
+        proxyList = scrapeProxyList() 
+    finally:
+        lock.release()
+    return proxyList
+
 def getProxy(proxyList):
+    #global proxyList
+    print(len(proxyList))
     #Return a random proxy in the list
     return proxyList[0]
 
 
 #Function for deleting the proxy from
-def removeProxy(proxyList, proxy):
-    #Figure out what index in the list is the one to delete
-    proxyList.remove(proxy)
-    print("Removing " + str(proxy) + ". " + str(len(proxyList)) + " remaining.")# + " from: " + str(proxyList))
+def removeProxy(proxyList, proxy, lock):
+    #global proxyList
+    lock.acquire()
 
-    #Check to make sure it's not the only proxy in the list, and if it is, append a new scrape
-    if len(proxyList) < 1: 
-        print("Proxy List Too Short: " + str(proxyList))
-        print("Refreshing proxy List")
-        proxyList.extend( pls.main() )
+    try:
+        #Figure out what index in the list is the one to delete
+        if proxy in proxyList:
+            proxyList.remove(proxy)
+            print("Removing " + str(proxy) + ". " + str(len(proxyList)) + " remaining.")# + " from: " + str(proxyList))
+
+        #Check to make sure it's not the only proxy in the list, and if it is, append a new scrape
+        if len(proxyList) < 1: 
+            print("Proxy List Too Short: " + str(proxyList))
+            print("Refreshing proxy List")
+            proxyList.extend( scrapeProxyList() )
+    finally:
+        lock.release()
 
 
-def get_data(keyword, pageNo, q, proxyCounter, proxyList, tagging_df):  
+def get_data(keyword, pageNo, q, lock, proxyList, tagging_df):  
     headers = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:66.0) Gecko/20100101 Firefox/66.0", "Accept-Encoding":"gzip, deflate", "Accept":"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", "DNT":"1","Connection":"close", "Upgrade-Insecure-Requests":"1"}
     
     #Keep trying until an exception isn't raised
@@ -104,14 +114,13 @@ def get_data(keyword, pageNo, q, proxyCounter, proxyList, tagging_df):
             printProxy = proxy['https']
 
         try:
-            r = requests.get("https://www.amazon.com/s?k=" + keyword + "&page=" + str(pageNo), headers=headers, proxies=proxy)
+            r = requests.get("https://www.amazon.com/s?k=" + keyword + "&page=" + str(pageNo), headers=headers, proxies=proxy, timeout=15)
             
         except:
             #remove the bad proxy from the list so we don't try it again
-            removeProxy(proxyList, proxy)
+            removeProxy(proxyList, proxy, lock)
             print("There was a connection error")
             print("Bad Proxy: " + printProxy)
-            proxyCounter += 1
 
         else:
             print("Now things are ok")
@@ -130,16 +139,13 @@ def get_data(keyword, pageNo, q, proxyCounter, proxyList, tagging_df):
             
             if len(soup.findAll('div', attrs={'data-index':re.compile(r'\d+')})) == 0:
                 #remove the bad proxy from the list so we don't try it again
-                removeProxy(proxyList, proxy)
+                removeProxy(proxyList, proxy, lock)
 
                 print("There was a captcha error")
                 print("Bad Proxy: " + printProxy)
-                proxyCounter += 1
             else:
                 noError = True
-        #finally:
-        #    if proxyCounter >= 500: raise RuntimeError('Proxy List is failing to pull properly. Try the scrape again later')
-
+        
     #content = r.content
     #soup = BeautifulSoup(content, features="lxml")
     #print(soup.encode('utf-8')) # uncomment this in case there is some non UTF-8 character in the content and
@@ -232,22 +238,29 @@ def get_data(keyword, pageNo, q, proxyCounter, proxyList, tagging_df):
              
     print("Put " + keyword + " #" + str(pageNo))
     #DEBUGGING -- if this is page 1 of the first loop, just save the full html file
-    if pageNo == 1 and keyword == 'cereal':
-        with open('cereal_html.html', 'w', encoding='utf-8') as outfile:
-            outfile.write(str(soup))
+    #if pageNo == 1 and keyword == 'cereal':
+    #    with open('cereal_html.html', 'w', encoding='utf-8') as outfile:
+    #        outfile.write(str(soup))
 
 
 results = []
 if __name__ == "__main__":
+    print("In the main")
+    
     m = Manager()
     q = m.Queue() # use this manager Queue instead of multiprocessing Queue as that causes error
-    
-    proxyList = scrapeProxyList() #getProxyList('./proxyList.csv')
+    lock = Lock()
 
+    proxyList = generateProxyList(lock)
+    #proxyList.extend( scrapeProxyList() )
+
+    print("ProxyList of length: " + str(len(proxyList)))
 
     #This is where we create the keyword / page dictionary to loop through, so we can truly be parallel with execution
     searchList = []
     
+    #raise SyntaxError
+
     for word in keywords:
         for i in range (1, no_pages):
             searchList.append( {'word': word, 'page': i} )
@@ -259,7 +272,7 @@ if __name__ == "__main__":
 
     for i in range(len(searchList)):            
         print("starting process: ",proxyCounter)
-        p[i] = Process(target=get_data, args=(searchList[i]['word'], searchList[i]['page'], q, proxyCounter, proxyList, tagging_df))
+        p[i] = Process(target=get_data, args=(searchList[i]['word'], searchList[i]['page'], q, lock, proxyList, tagging_df))
         p[i].start()
 
         #increment ProxyCounter

@@ -2,12 +2,7 @@
 #Currently super inefficient because we're searching through the full CSV file each time instead of indexing the CSV files and iterating over the words in the product name.....
  
 #TODOS:
-#Clean up numbers that are saved, so it includes units too
-#For some reason, the 5th entry is getting tagged as a mispelled Q water brand, even though it's stubborn soda
-###Also need to get it so that the correct sub-brands get chosen instead of the least interesting top-brand (i.e. Mountain Dew Kickstart instead of mountain Dew)
-#Fix pack type so that it's catching Cans and whatnot -- not catching Mini Cans
-###Think we need to use the partial match on those, which we can't do in the brand names, but in this instance, I think it could work
-
+#Pass the data frame to the function so it opens up once and doesn't open/close every time the function is called
 #Add Variant and MFG support
 #Keep a metadata.txt file that says what Packages I've downloaded and are using
 ###Currently we've got pandas, fuzzywuzzy, which also needs a C-Compiler to run properly, beautifulSoup, pathlib
@@ -16,8 +11,9 @@ import pandas as pd
 import re
 from pathlib import Path
 from fuzzywuzzy import process
+from datetime import date
 
-def tag_data(productName):
+def tag_data(productName, brandMFGDict, variantDict, packDict):
 
     #Clean up the product name
     #First make it lower case
@@ -29,11 +25,11 @@ def tag_data(productName):
 
 
     #figure out the necessary filepaths
-    data_folder = Path("./tagging_csvs/")
+    #data_folder = Path("./tagging_csvs/")
 
-    brandMFGDict = pd.read_csv(data_folder / 'brand & MFG.csv')
+    #brandMFGDict = pd.read_csv(data_folder / 'brand & MFG.csv')
     #variantDict = pd.read_csv(data_folder / 'variant.csv')
-    packDict = pd.read_csv(data_folder / 'pack.csv')
+    #packDict = pd.read_csv(data_folder / 'pack.csv')
 
 
     #Loop through the words in the product name and determine whether they're a brand, variant, pack type, size, or count
@@ -66,7 +62,7 @@ def tag_data(productName):
     else:
         bestMatch = bestMatches[bestScores.index(max(bestScores))]
 
-    if bestMatch[1] > 70: brand = bestMatch[0]
+    if bestMatch[1] > 85: brand = bestMatch[0]
     
     #Set bestSimilarity to 0, for improvement
     #bestSimilarity = 0
@@ -103,15 +99,15 @@ def tag_data(productName):
             ####I think I need to fix this so that it captures numbers that are part of the same word as "Pack" etc. 
             ####And I think I can fix both of these by implementing something along the lines of "Pack of \d" and similar wording... I'll see
             ####I'm looking into fuzzy logic, but I think that 's probably overkill...
-            for j in range(-2, 3):
-                isMatch = re.search(r'\d+\.*\d*', splitName[i+j].lower())
+            for j in range(max(i - 2, 0), min(i + 3, len(splitName))):
+                isMatch = re.search(r'\d+\.*\d*', splitName[j].lower())
                 if isMatch: 
                     #This is a really clunky way to clean the data and get only the numbers and then the words
                     #THERE SURELY MUST BE A BETTER WAY
-                    numSearch = re.search(r'(\d+\.*\d*)', splitName[i+j])
+                    numSearch = re.search(r'(\d+\.*\d*)', splitName[j])
                     if numSearch: relevantInfo = [numSearch.group(1)]
-                    #relevantInfo = [splitName[i+j]]
-                    relevantInfo += [re.sub(r'[0-9]|[-/()\,]',r'', word) for word in splitName[i+j: i+j+3] if re.sub(r'[0-9]|[-/()\,]',r'', word) in unitsList]
+                    #relevantInfo = [splitName[j]]
+                    relevantInfo += [re.sub(r'[0-9]|[-/()\,]',r'', word) for word in splitName[max(i-2, 0): min(i + 3, len(splitName))] if re.sub(r'[0-9]|[-/()\,]',r'', word) in unitsList]
 
                     packSize = re.sub(r'[-/()]|\sBD',r'', " ".join(relevantInfo)).lower()
                     break
@@ -120,23 +116,82 @@ def tag_data(productName):
         if "count" in splitName[i].lower() or "pack" in splitName[i].lower() or "pk" in splitName[i].lower() or "ct" in splitName[i].lower():
 
             #Now check to see if there are #s in the words before or after
-            for j in range(-2, 3):
-                isMatch = re.search(r'\d+', splitName[i+j].lower())
+            for j in range(max(i - 2, 0), min(i + 3, len(splitName))):
+                isMatch = re.search(r'\d+', splitName[j].lower())
                 if isMatch: 
-                    packCount = re.sub(r'[,-./()]|\sBD',r'', splitName[i+j].lower())
+                    packCount = re.sub(r'[,-./()]|\sBD',r'', splitName[j].lower())
                     break
-    
+    print("Tagged")
     #return the dictionary
-    return {'brand':brand, 'pack Type':packType, 'count':packCount, 'size':packSize}#'mfg':mfg, 'variant':variant, 'packType':packType, 'count': packCount, 'size': packSize}
+    return {'brand':brand, 'mfg':mfg, 'variant':variant, 'packType':packType, 'count': packCount, 'size': packSize}
+
+def tag_scrape_file(readFile):
+
+    #figure out the necessary filepaths and read in the CSV to a dataframe
+    filePath = Path(readFile).parents[0] 
+    df = pd.read_csv(readFile)
+
+    #figure out the necessary filepaths
+    data_folder = Path("./tagging_csvs/")
+
+    brandMFGDict = pd.read_csv(data_folder / 'brand & MFG.csv')
+    variantDict = pd.read_csv(data_folder / 'variant.csv')
+    packDict = pd.read_csv(data_folder / 'pack.csv')
+
+    #Declare the lists to hold the tags and the counts to write the 
+    brands=[] #List to store tagged brand of the product
+    MFGs=[] #List to store tagged manufcaturer of the product
+    variants=[] #List to store tagged variants of the product
+    packTypes=[] #List to store tagged pack types of the product
+    packCounts=[] #List to store tagged pack counts of the product
+    packSizes=[] #List to store tagged pack sizes of the product
+
+    #For each line of the name, run the tag_data function and append the tagged data
+    counter = 0
+    for name in df['Product Name']: 
+        print("Tagging Entry: " + str(counter))
+        tagDict = tag_data(name, brandMFGDict, variantDict, packDict)
+
+        brands.append(tagDict['brand'])
+        MFGs.append(tagDict['mfg'])
+        variants.append(tagDict['variant'])
+        packTypes.append(tagDict['packType'])
+        packCounts.append(tagDict['count'])
+        packSizes.append(tagDict['size'])
+
+        counter += 1
+
+    #Append the new columns to the dataframe
+    df.insert(len(df.columns), 'Brand', brands)
+    df.insert(len(df.columns), 'MFG', MFGs)
+    df.insert(len(df.columns), 'Variant', variants)
+    df.insert(len(df.columns), 'Pack Type', packTypes)
+    df.insert(len(df.columns), 'Pack Count', packCounts)
+    df.insert(len(df.columns), 'Pack Size', packSizes)
+
+    #And write the dataframe to the file -- THIS PROBABLY SHOULDN"T BE DONE IN THIS FUNCTION, BUT WITHIN THE CALLING FUCNTION< BUT WHATEVER
+    df.to_csv(filePath /  (str(date.today()) + '-SearchList-Tagged.csv'), index=False, encoding='utf-8')
+
+def get_tag_dicts():
+
+    #figure out the necessary filepaths
+    data_folder = Path("./tagging_csvs/")
+
+    brandMFGDict = pd.read_csv(data_folder / 'brand & MFG.csv')
+    variantDict = pd.read_csv(data_folder / 'variant.csv')
+    packDict = pd.read_csv(data_folder / 'pack.csv')
+
+    return (brandMFGDict, variantDict, packDict)
 
 
 #Now for debugging 
 #let's open a CSV file and attempt to tag a couple things
-amazonFolder = Path('./amazon_data/')
-scrapeData = pd.read_csv(amazonFolder / '2020-11-25-SearchList.csv')
+#amazonFolder = Path('./amazon_data/')
+#scrapeData = pd.read_csv(amazonFolder / '2020-11-25-SearchList.csv')
 
-productList = scrapeData['Product Name']
+#productList = scrapeData['Product Name']
 
-for i in range(5):
-    print(productList[i])
-    print(tag_data(productList[i]))
+#for i in range(5):
+#    print(productList[i])
+#    print(tag_data(productList[i]))
+#tag_scrape_file('./amazon_data/2020-11-28-SearchList.csv')

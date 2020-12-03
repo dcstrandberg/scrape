@@ -41,9 +41,7 @@ def testProxies(aProxy, headers, q):
     return
 
 
-#def scrapeProxyList(): 
-#Getting rid of the function definition in favor of the main function so that we can use multiprocessing on the proxy checking
-if __name__ == "__main__":
+def scrapeProxyList(): 
     m = Manager()
     q = m.Queue() # use this manager Queue instead of multiprocessing Queue as that causes error
     qcount = 0
@@ -78,43 +76,11 @@ if __name__ == "__main__":
 
                 proxyList.append( {'https': 'https://' + address.text + ":" + port.text} )
                 
-    #Adding a part two, a second scrape to build out the list a bit more
-    #r = requests.get("https://www.proxynova.com/proxy-server-list/country-us/", headers=headers)
-    #content = r.content
-    #soup = BeautifulSoup(content, features="lxml")
-    #print(soup.encode('utf-8')) # uncomment this in case there is some non UTF-8 character in the content and
-                                 # you get error
-	
-    #for d in soup.findAll('tr'):
-    #    print(d)
-    #    if d['data-proxy-id'] is None: continue
-    #    
-    #    td = d.contents[0]
-
-    #    if td is not None and d['data-proxy-id'] is not None:
-    #        abbr = td['abbr']
-    #        
-    #        #if abbr is not None:
-    #        addrText = abbr['title']
-    #        
-    #    port = d.contents[1]
-    #    #https = d.contents[6]
-    #    
-
-    #    if d.parent.name == "tbody"  and port is not None:
-
-    #        portText = port.text
-
-    #        #Quickly strip off any quotes around either:
-    #        if addrText[0] == '"': addrText = addrText[1:]
-    #        if addrText[-1] == '"': addrText = addrText[:-1]
-
-    #        proxyList.append( {'http': 'http://' + addrText + ":" + portText} )
     ###TESTING THE PROXIES IS SOMETHING THAT SHOULD BE DONE MULTIPROCCESSED, SO WE'RE DOING THIS SHIT....
     p = {}    
 
     for i in range(len(proxyList)):            
-        print("starting process: ", i)
+        print("starting proxy process: ", i)
         p[i] = Process(target=testProxies, args=(proxyList[i], headers, q))
         p[i].start()
 
@@ -125,16 +91,18 @@ if __name__ == "__main__":
         # parallel
     for i in range(len(proxyList)):
         p[i].join()
-        print("#" + str(i) + " joined")
+        print("Proxy " + str(i) + " joined")
+    
     while q.empty() is not True:
         qcount = qcount+1
         queue_top = q.get()
         workingProxyList.append(queue_top[0])
-        print("Q Count " + str(qcount) + " pulled")
+        print("Proxy Q " + str(qcount) + " pulled")
                 
     #Only run once everything is done        
-    print("qcount: ", qcount)
+    #print("proxy qcount: ", qcount)
     
+    #return proxyList
     return workingProxyList
 
 #This function should only ever need to be run once...
