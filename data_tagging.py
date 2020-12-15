@@ -4,13 +4,11 @@
 #TODOS:
 #Pass the data frame to the function so it opens up once and doesn't open/close every time the function is called
 #Add Variant and MFG support
-#Keep a metadata.txt file that says what Packages I've downloaded and are using
-###Currently we've got pandas, fuzzywuzzy, which also needs a C-Compiler to run properly, beautifulSoup, pathlib
 
 import pandas as pd
 import re
 from pathlib import Path
-from fuzzywuzzy import process
+from fuzzywuzzy import process, fuzz
 from datetime import date
 
 def tag_data(productName, brandMFGDict, variantDict, packDict):
@@ -45,38 +43,82 @@ def tag_data(productName, brandMFGDict, variantDict, packDict):
     packCount = ""
 
     #For now let's actually do it the hard way and loop through each of the CSV lists to see if there's anything -- this prevents having to do any special string formatting
-    bestScores = [score[1] for score in process.extractBests(productName, brandMFGDict['Brand'])]
-    bestMatches = process.extractBests(productName, brandMFGDict['Brand'])
-    
+    #bestScores = [score[1] for score in process.extractBests(productName, brandMFGDict['Brand'])]
+    #bestMatches = process.extractBests(productName, brandMFGDict['Brand'])
+
+    bestScores = [fuzz.token_set_ratio(productName, score) for score in brandMFGDict['Brand']]
+    bestMatches = brandMFGDict['Brand']
+
+    sodaScore = fuzz.token_set_ratio(productName, 'soda')
+    #print(bestMatches)
+
     #We're not using the built in function extractBest because we need to be able to discern between matches that have the same score, but one is longer than the other
-    if bestScores.count(max(bestScores)) > 1: 
+    #Also checking if the match is equally good to the word "Soda", given that that's a huge issue with our database
+    if bestScores.count(max(bestScores)) > 1 or max(bestScores) == sodaScore: 
         bestIndex = 0
         matchLength = 0
         for i in range(len(bestScores)):
             #Check if the latest entry is longer than the current best match
             currentMatch = bestMatches[i]
-            if bestScores[i] == max(bestScores) and len(currentMatch[0]) > matchLength:
+            #print("Brand Matches: ", currentMatch)
+            if bestScores[i] == max(bestScores) and len(currentMatch) > matchLength:
                 bestIndex = i
-                matchLength = len(currentMatch[0])
+                matchLength = len(currentMatch)
         bestMatch = bestMatches[bestIndex]
     else:
-        bestMatch = bestMatches[bestScores.index(max(bestScores))]
+        bestIndex = bestScores.index(max(bestScores))
+        bestMatch = bestMatches[bestIndex]
 
-    if bestMatch[1] > 85: brand = bestMatch[0]
+    if bestScores[bestIndex] > 85: 
+        brand = bestMatch
+    #else: 
+        #print("Brand Score: " + str(bestScores[bestIndex]) + " for " + bestMatch)
+    # if bestMatch[1] > 85: brand = bestMatch[0]
     
-    #Set bestSimilarity to 0, for improvement
-    #bestSimilarity = 0
-    #for i in range(len(brandMFGDict['Brand'])):        
-    #    if brandMFGDict['Brand'][i].lower() in productName.lower(): 
-    #        brand = brandMFGDict['Brand'][i]
-            #mfg = brandMFGDict['Manufacturer'][i]
-    #        break
+    #Now lookup the MFG that goes along w/ that brand
+    if brand in list(brandMFGDict['Brand']):
+        brandIndex = list(brandMFGDict['Brand']).index(brand)
+        mfg = brandMFGDict['Manufacturer'][brandIndex]
+    else: 
+        print("Couldn't find MFG for " + brand)    
     
-    #for i in range(len(variantDict['Variant'])):
-    #    if variantDict['Variant'][i].lower() in productName.lower():
-    #        variant = variantDict['Variant'][i]
-    #        break
+    #And now we do variants
+    #bestScores = [score[1] for score in process.extractBests(productName, variantDict['Variant'])]
+    #bestMatches = process.extractBests(productName, variantDict['Variant'])
 
+    bestScores = [fuzz.token_set_ratio(productName, score) for score in variantDict['Variant']]
+    bestMatches = variantDict['Variant']
+
+    sodaScore = fuzz.token_set_ratio(productName, 'soda')
+    #print(bestMatches)
+
+    #We're not using the built in function extractBest because we need to be able to discern between matches that have the same score, but one is longer than the other
+    #Also checking if the match is equally good to the word "Soda", given that that's a huge issue with our database
+    if bestScores.count(max(bestScores)) > 1 or max(bestScores) == sodaScore or (bestMatches[bestScores.index(max(bestScores))] == "Cream Soda" and "cream" not in productName.lower()): 
+        bestIndex = 0
+        matchLength = 0
+        for i in range(len(bestScores)):
+            #Check if the latest entry is longer than the current best match
+            currentMatch = bestMatches[i]
+            #print("Match: ", currentMatch, bestScores[i])
+            #print("Brand Matches: ", currentMatch)
+            if bestScores[i] == max(bestScores) and len(currentMatch) > matchLength and not (currentMatch == "Cream Soda" and "cream" not in productName.lower()):
+                bestIndex = i
+                matchLength = len(currentMatch)
+        bestMatch = bestMatches[bestIndex]
+    else:
+        bestIndex = bestScores.index(max(bestScores))
+        bestMatch = bestMatches[bestIndex]
+
+    if bestScores[bestIndex] > 50: 
+        variant = bestMatch
+    #else:
+    #    print("Variant Score: " + str(bestScores[bestIndex]) + " for " + bestMatch)
+
+    # if bestMatch[1] > 85: variant = bestMatch[0]
+
+
+    #Now do some special string manipulation to get at pack metrics
     for i in range(len(packDict['Pack Type'])):
         if packDict['Pack Type'][i].lower() in productName.lower():
             packType = packDict['Pack Type'][i]
@@ -112,15 +154,20 @@ def tag_data(productName, brandMFGDict, variantDict, packDict):
                     packSize = re.sub(r'[-/()]|\sBD',r'', " ".join(relevantInfo)).lower()
                     break
         
-        #Now check the pack count
-        if "count" in splitName[i].lower() or "pack" in splitName[i].lower() or "pk" in splitName[i].lower() or "ct" in splitName[i].lower():
+    #Now check the pack count
+    #Create a list of pack wording regex identifiers
+    searchList = [r"\d+.count", r"pack of \d+", r"case of \d+", r"\d+.pack", r"\d+.pk", r"\d+.pck", r"\d+.ct", r"\d+.case"]
+    packCount = ""
 
-            #Now check to see if there are #s in the words before or after
-            for j in range(max(i - 2, 0), min(i + 3, len(splitName))):
-                isMatch = re.search(r'\d+', splitName[j].lower())
-                if isMatch: 
-                    packCount = re.sub(r'[,-./()]|\sBD',r'', splitName[j].lower())
-                    break
+    for search in searchList:
+        pattern = re.compile(search)
+        match = re.search(pattern, productName.lower())
+        if match:
+            if packCount != "":
+                packCount += " " + match.group(0)
+            else:
+                packCount += match.group(0)
+
     print("Tagged")
     #return the dictionary
     return {'brand':brand, 'mfg':mfg, 'variant':variant, 'packType':packType, 'count': packCount, 'size': packSize}
@@ -149,7 +196,7 @@ def tag_scrape_file(readFile):
     #For each line of the name, run the tag_data function and append the tagged data
     counter = 0
     for name in df['Product Name']: 
-        print("Tagging Entry: " + str(counter))
+        #print("Tagging Entry: " + str(counter))
         tagDict = tag_data(name, brandMFGDict, variantDict, packDict)
 
         brands.append(tagDict['brand'])
@@ -170,7 +217,22 @@ def tag_scrape_file(readFile):
     df.insert(len(df.columns), 'Pack Size', packSizes)
 
     #And write the dataframe to the file -- THIS PROBABLY SHOULDN"T BE DONE IN THIS FUNCTION, BUT WITHIN THE CALLING FUCNTION< BUT WHATEVER
-    df.to_csv(filePath /  (str(date.today()) + '-SearchList-Tagged.csv'), index=False, encoding='utf-8')
+    pathName = re.search(re.compile(r'\d\d\d\d-\d\d-\d\d'), str(readFile))
+    if pathName: dateString = pathName.group(0)
+
+    try:
+        df.to_csv(filePath /  (dateString + '-SearchList-Tagged2.csv'), index=False, encoding='utf-8')
+        print("Saved", filePath /  (dateString + '-SearchList-Tagged2.csv'))
+    except:
+        print("Error saving tagged file: ", filePath /  (dateString + '-SearchList-Tagged2.csv'))
+
+
+#def update_database_tags(date = "All", source = "All"): 
+    #First check the parameters
+    #if date == "All": date = re.compile(r'\d\d\d\d=\d\d-\d\d')
+    #if source == "All": source = re.compile(r'.*')
+
+
 
 def get_tag_dicts():
 
@@ -183,15 +245,50 @@ def get_tag_dicts():
 
     return (brandMFGDict, variantDict, packDict)
 
+if __name__ == "__main__":
 
-#Now for debugging 
-#let's open a CSV file and attempt to tag a couple things
-#amazonFolder = Path('./amazon_data/')
-#scrapeData = pd.read_csv(amazonFolder / '2020-11-25-SearchList.csv')
+    #Now for debugging 
+    #let's open a CSV file and attempt to tag a couple things
+    amazonFolder = Path('./amazon_data/')
+    scrapeDataList = amazonFolder.iterdir()
+    
+    #scrapeCSV = Path(amazonFolder / '2020-11-24-SearchList.csv')
 
-#productList = scrapeData['Product Name']
+    for csv in scrapeDataList: 
+        #tag the file, which creates a new file
+        if "Tagged" not in str(csv):
+            tag_scrape_file(csv)
+    
+    #For debugging purposes, open a file
+    #df = pd.read_csv(scrapeCSV)
+    #productList = df['Product Name']
+    #taggingDicts = get_tag_dicts()
 
-#for i in range(5):
-#    print(productList[i])
-#    print(tag_data(productList[i]))
-#tag_scrape_file('./amazon_data/2020-11-28-SearchList.csv')
+
+    #for i in range(5):
+    #    print(productList[i])
+    3    
+    #    x = tag_data(productList[i], taggingDicts[0], taggingDicts[1], taggingDicts[2])
+    #    print(x)
+        
+    ###--------------------------------------------
+    #Below this is a lot of special testing of how the various string comparison methods work
+
+    #poppiText = "poppi A Healthy Sparkling Prebiotic Soda, w/ Real Fruit Juice, Gut Health & Immunity Benefits, 12pk 12oz Cans, Beach Party Variety Pack (Strawberry Lemonade| Lime Ginger| Pineapple Mango| Orange)".lower()
+
+    #matchList = ['Poppi', 'Real Food From The Ground Up', 'Stubborn Soda', 'Q Club Soda']
+
+    #for match in matchList:
+    #    print(match + ": " + str(fuzz.ratio(poppiText, match.lower())))
+    #    print(match + ": " + str(fuzz.partial_ratio(poppiText, match.lower())))
+    #    print(match + ": " + str(fuzz.token_sort_ratio(poppiText, match.lower())))
+    #    print(match + ": " + str(fuzz.token_set_ratio(poppiText, match.lower())))
+
+    #print("extractOne: ",  process.extractOne(poppiText, matchList))
+    #for entry in process.extractBests(poppiText, matchList):
+    #    print("extractBests: ", entry)
+
+    #for entry in process.extract(poppiText, matchList):
+    #    print("extract: ", entry)
+   
+    #tag_scrape_file('./amazon_data/2020-11-28-SearchList.csv')

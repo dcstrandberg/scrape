@@ -21,6 +21,7 @@ import time
 from multiprocessing import Process, Queue, Pool, Manager, Lock
 from send_email import send_email
 from data_tagging import tag_data, get_tag_dicts
+from DB_functions import update_scrape_db
 
 #Declare the variables that will be needed to run the request loop
 proxyList = []
@@ -30,6 +31,7 @@ startTime = time.time()
 qcount = 0
 
 #Declare the lists that will be used to store the final dataframe
+sourceList=[] #list to store sources of scraped data
 searchTerms=[] #list to store keyword of product
 dates = [] #list to store date of search for product
 products=[] #List to store name of the product
@@ -61,11 +63,11 @@ keywords = ['Soda', 'Water', 'Sports Drinks', 'Coffee', 'Cereal', 'Snack Bars', 
 ###AND HAVE METHODS TO CALL/UPDATE IT
 
 #Function for getting a proxy
-def generateProxyList(lock):
+def generateProxyList(lock, proxyCounter):
     #global proxyList
     lock.acquire()
     try:
-        proxyList = scrapeProxyList() 
+        proxyList = scrapeProxyList(proxyCounter) 
     finally:
         lock.release()
     return proxyList
@@ -78,7 +80,7 @@ def getProxy(proxyList):
 
 
 #Function for deleting the proxy from
-def removeProxy(proxyList, proxy, lock):
+def removeProxy(proxyList, proxy, lock, proxyCounter):
     #global proxyList
     lock.acquire()
 
@@ -92,12 +94,14 @@ def removeProxy(proxyList, proxy, lock):
         if len(proxyList) < 1: 
             print("Proxy List Too Short: " + str(proxyList))
             print("Refreshing proxy List")
-            proxyList.extend( scrapeProxyList() )
+            proxyList.extend( scrapeProxyList(proxyCounter) )
+            if proxyCounter < 200: proxyCounter += 20
     finally:
         lock.release()
+    return proxyCounter
 
 
-def get_data(keyword, pageNo, q, lock, proxyList, tagging_df):  
+def get_data(keyword, pageNo, q, lock, proxyList, tagging_df, proxyCounter):  
     headers = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:66.0) Gecko/20100101 Firefox/66.0", "Accept-Encoding":"gzip, deflate", "Accept":"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", "DNT":"1","Connection":"close", "Upgrade-Insecure-Requests":"1"}
     
     #Keep trying until an exception isn't raised
@@ -118,7 +122,7 @@ def get_data(keyword, pageNo, q, lock, proxyList, tagging_df):
             
         except:
             #remove the bad proxy from the list so we don't try it again
-            removeProxy(proxyList, proxy, lock)
+            proxyCounter = removeProxy(proxyList, proxy, lock, proxyCounter)
             print("There was a connection error")
             print("Bad Proxy: " + printProxy)
 
@@ -139,7 +143,7 @@ def get_data(keyword, pageNo, q, lock, proxyList, tagging_df):
             
             if len(soup.findAll('div', attrs={'data-index':re.compile(r'\d+')})) == 0:
                 #remove the bad proxy from the list so we don't try it again
-                removeProxy(proxyList, proxy, lock)
+                proxyCounter = removeProxy(proxyList, proxy, lock, proxyCounter)
 
                 print("There was a captcha error")
                 print("Bad Proxy: " + printProxy)
@@ -189,6 +193,7 @@ def get_data(keyword, pageNo, q, lock, proxyList, tagging_df):
             #print("Checking Name: ", name)
             if name is not None: #and price is not None:
                 
+                all.append("Amazon")
                 all.append(keyword)
                 all.append(date.today())
                 
@@ -251,7 +256,8 @@ if __name__ == "__main__":
     q = m.Queue() # use this manager Queue instead of multiprocessing Queue as that causes error
     lock = Lock()
 
-    proxyList = generateProxyList(lock)
+    proxyCounter = 20
+    proxyList = generateProxyList(lock, proxyCounter)
     #proxyList.extend( scrapeProxyList() )
 
     print("ProxyList of length: " + str(len(proxyList)))
@@ -271,13 +277,11 @@ if __name__ == "__main__":
     p = {}    
 
     for i in range(len(searchList)):            
-        print("starting process: ",proxyCounter)
-        p[i] = Process(target=get_data, args=(searchList[i]['word'], searchList[i]['page'], q, lock, proxyList, tagging_df))
+        print("starting process: ", i)
+        p[i] = Process(target=get_data, args=(searchList[i]['word'], searchList[i]['page'], q, lock, proxyList, tagging_df, proxyCounter))
         p[i].start()
 
-        #increment ProxyCounter
-        proxyCounter += 1
-
+    
         # join should be done in seperate for loop 
         # reason being that once we join within previous for loop, join for p1 will start working
         # and hence will not allow the code to run after one iteration till that join is complete, ie.
@@ -289,22 +293,23 @@ if __name__ == "__main__":
     while q.empty() is not True:
         qcount = qcount+1
         queue_top = q.get()
-        searchTerms.append(queue_top[0])
-        dates.append(queue_top[1])
-        products.append(queue_top[2])
-        prices.append(queue_top[3])
-        regularPrices.append(queue_top[4])
-        onSales.append(queue_top[5])
-        amazonChoices.append(queue_top[6])
-        sponsoredList.append(queue_top[7])
-        positions.append(queue_top[8])
-        pages.append(queue_top[9])
-        brands.append(queue_top[10])
-        MFGs.append(queue_top[11])
-        variants.append(queue_top[12])
-        packTypes.append(queue_top[13])
-        packCounts.append(queue_top[14])
-        packSizes.append(queue_top[15])
+        sourceList.append(queue_top[0])
+        searchTerms.append(queue_top[1])
+        dates.append(queue_top[2])
+        products.append(queue_top[3])
+        prices.append(queue_top[4])
+        regularPrices.append(queue_top[5])
+        onSales.append(queue_top[6])
+        amazonChoices.append(queue_top[7])
+        sponsoredList.append(queue_top[8])
+        positions.append(queue_top[9])
+        pages.append(queue_top[10])
+        brands.append(queue_top[11])
+        MFGs.append(queue_top[12])
+        variants.append(queue_top[13])
+        packTypes.append(queue_top[14])
+        packCounts.append(queue_top[15])
+        packSizes.append(queue_top[16])
         print("Q Count " + str(qcount) + " pulled")
                 
     #Only run once everything is done        
@@ -312,20 +317,23 @@ if __name__ == "__main__":
     #print(q.get())
     
 
-    df = pd.DataFrame({'Keyword':searchTerms,'Date':dates, 'Product Name':products, 'Price':prices, 
-        'Regular Price:':regularPrices, 'On Sale?':onSales, 'Amazon Choice':amazonChoices, 'Sponsored':sponsoredList, 'List Position':positions, 'Page':pages})
+    #df = pd.DataFrame({'Source':sourceList, 'Keyword':searchTerms,'Date':dates, 'Product Name':products, 'Price':prices, 
+    #    'Regular Price':regularPrices, 'On Sale':onSales, 'Amazon Choice':amazonChoices, 'Sponsored':sponsoredList, 'List Position':positions, 'Page':pages})
     #print(df)
-    df.to_csv('./amazon_data/' + str(date.today()) + '-SearchList.csv', index=False, encoding='utf-8')
-    print("Dataframe saved")
+    #df.to_csv('./amazon_data/' + str(date.today()) + '-SearchList.csv', index=False, encoding='utf-8')
+    #print("Dataframe saved")
 
 
-    tagged_df = pd.DataFrame({'Keyword':searchTerms,'Date':dates, 'Product Name':products, 'Price':prices, 
-        'Regular Price:':regularPrices, 'On Sale?':onSales, 'Amazon Choice':amazonChoices, 'Sponsored':sponsoredList, 
-        'List Position':positions, 'Page':pages, 'Brand':brands, 'MFG':MFGs, 'Variant':variants, 'Pack Type':packTypes,
-        'Pack Count':packCounts, 'Pack Size':packSizes})
-    tagged_df.to_csv('./amazon_data/' + str(date.today()) + '-SearchList-Tagged.csv', index=False, encoding='utf-8')
-    print("Tagged DataFrame Saved")
+    tagged_df = pd.DataFrame({'Source':sourceList, 'Keyword':searchTerms,'Date':dates, 'Product_Name':products, 'Price':prices, 
+        'Regular_Price':regularPrices, 'On_Sale':onSales, 'Featured':amazonChoices, 'Sponsored':sponsoredList, 
+        'List_Position':positions, 'Page':pages, 'Brand':brands, 'MFG':MFGs, 'Variant':variants, 'Pack_Type':packTypes,
+        'Pack_Count':packCounts, 'Pack_Size':packSizes})
+    #tagged_df.to_csv('./amazon_data/' + str(date.today()) + '-SearchList-Tagged.csv', index=False, encoding='utf-8')
+    #print("Tagged DataFrame Saved")
 
+    #Now write to the database and overwrite if we already have Amazon scrape data from today
+    numWritten = update_scrape_db(tagged_df, True)
+    print("Entries written to DB: ", numWritten)
 
     #Send completion email so we can make sure data got recorded
     recipient = 'david@4sightassociates.com'

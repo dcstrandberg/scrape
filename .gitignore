@@ -2,3 +2,4 @@
 send_email.py
 *.pyc
 .\amazon_data\
+scratch.py
