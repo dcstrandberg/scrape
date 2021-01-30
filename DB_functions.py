@@ -43,6 +43,30 @@ def execute_query(connection, query, errorMsg = "The error occurred"):
         print(errorMsg)
     return cursor
 
+def pull_all_data():
+    #connect to the DB
+    conn = connect_to_db('sqlite/ecommerce.db')
+    results = None 
+
+    try:
+        #cursor.execute('SELECT * FROM scrape_data')
+        #conn.commit()
+        results = pd.read_sql_query('SELECT * FROM scrape_data', conn)
+        print("Selected Data")
+    except:
+        print("Error with cursor")
+
+    
+
+    #results = cursor.fetchall()
+    if results is not None:
+        print(len(results))
+    else:
+        print("No values in table")
+    #cursor.close()
+
+    return results
+
 def update_scrape_db(df, replace = False):
     #connect to the DB
     conn = connect_to_db('sqlite/ecommerce.db')
