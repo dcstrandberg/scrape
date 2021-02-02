@@ -53,6 +53,7 @@ def pull_all_data():
         #conn.commit()
         results = pd.read_sql_query('SELECT * FROM scrape_data', conn)
         print("Selected Data")
+        print(len(results))
     except:
         print("Error with cursor")
 

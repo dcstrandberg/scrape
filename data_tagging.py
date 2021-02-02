@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 from fuzzywuzzy import process, fuzz
 from datetime import date
+import DB_functions
 
 def tag_data(productName, brandMFGDict, variantDict, packDict):
 
@@ -79,8 +80,8 @@ def tag_data(productName, brandMFGDict, variantDict, packDict):
     if brand in list(brandMFGDict['Brand']):
         brandIndex = list(brandMFGDict['Brand']).index(brand)
         mfg = brandMFGDict['Manufacturer'][brandIndex]
-    else: 
-        print("Couldn't find MFG for " + brand)    
+    #else: 
+    #    print("Couldn't find MFG for " + brand)    
     
     #And now we do variants
     #bestScores = [score[1] for score in process.extractBests(productName, variantDict['Variant'])]
@@ -168,7 +169,7 @@ def tag_data(productName, brandMFGDict, variantDict, packDict):
             else:
                 packCount += match.group(0)
 
-    print("Tagged")
+    #print("Tagged")
     #return the dictionary
     return {'brand':brand, 'mfg':mfg, 'variant':variant, 'packType':packType, 'count': packCount, 'size': packSize}
 
@@ -245,50 +246,60 @@ def get_tag_dicts():
 
     return (brandMFGDict, variantDict, packDict)
 
+def tagDB(): 
+    
+    df = DB_functions.pull_all_data()
+
+
+    #figure out the necessary filepaths
+    data_folder = Path("./tagging_csvs/")
+
+    brandMFGDict = pd.read_csv(data_folder / 'brand & MFG.csv')
+    variantDict = pd.read_csv(data_folder / 'variant.csv')
+    packDict = pd.read_csv(data_folder / 'pack.csv')
+
+    #Declare the lists to hold the tags and the counts to write the 
+    brands=[] #List to store tagged brand of the product
+    MFGs=[] #List to store tagged manufcaturer of the product
+    variants=[] #List to store tagged variants of the product
+    packTypes=[] #List to store tagged pack types of the product
+    packCounts=[] #List to store tagged pack counts of the product
+    packSizes=[] #List to store tagged pack sizes of the product
+
+    #For each line of the name, run the tag_data function and append the tagged data
+    counter = 0
+    for name in df['Product_Name']: 
+        #print("Tagging Entry: " + str(counter))
+        tagDict = tag_data(name, brandMFGDict, variantDict, packDict)
+
+        brands.append(tagDict['brand'])
+        MFGs.append(tagDict['mfg'])
+        variants.append(tagDict['variant'])
+        packTypes.append(tagDict['packType'])
+        packCounts.append(tagDict['count'])
+        packSizes.append(tagDict['size'])
+
+        if counter % 100 == 0: 
+            print("Tagging... {:.2f}%".format( (counter * 100 / len(df['Product_Name']))))
+        counter += 1
+
+
+    #Append the new columns to the dataframe
+    df['Brand'] = brands
+    df['MFG'] = MFGs
+    df['Variant'] = variants
+    df['Pack_Type'] = packTypes
+    df['Pack_Count'] = packCounts
+    df['Pack_Size'] = packSizes
+
+    numWritten = DB_functions.update_scrape_db( df, True)
+    print("Entries written to DB: ", numWritten)
+    return numWritten
+
+
 if __name__ == "__main__":
 
-    #Now for debugging 
-    #let's open a CSV file and attempt to tag a couple things
-    amazonFolder = Path('./amazon_data/')
-    scrapeDataList = amazonFolder.iterdir()
+    #ONLY DO THIS IF WE WANT TO COMPLETELY OVERWRITE THE DB
+    num = tagDB()
+    print("We just tagged " + num + " entries!")
     
-    #scrapeCSV = Path(amazonFolder / '2020-11-24-SearchList.csv')
-
-    for csv in scrapeDataList: 
-        #tag the file, which creates a new file
-        if "Tagged" not in str(csv):
-            tag_scrape_file(csv)
-    
-    #For debugging purposes, open a file
-    #df = pd.read_csv(scrapeCSV)
-    #productList = df['Product Name']
-    #taggingDicts = get_tag_dicts()
-
-
-    #for i in range(5):
-    #    print(productList[i])
-    #    
-    #    x = tag_data(productList[i], taggingDicts[0], taggingDicts[1], taggingDicts[2])
-    #    print(x)
-        
-    ###--------------------------------------------
-    #Below this is a lot of special testing of how the various string comparison methods work
-
-    #poppiText = "poppi A Healthy Sparkling Prebiotic Soda, w/ Real Fruit Juice, Gut Health & Immunity Benefits, 12pk 12oz Cans, Beach Party Variety Pack (Strawberry Lemonade| Lime Ginger| Pineapple Mango| Orange)".lower()
-
-    #matchList = ['Poppi', 'Real Food From The Ground Up', 'Stubborn Soda', 'Q Club Soda']
-
-    #for match in matchList:
-    #    print(match + ": " + str(fuzz.ratio(poppiText, match.lower())))
-    #    print(match + ": " + str(fuzz.partial_ratio(poppiText, match.lower())))
-    #    print(match + ": " + str(fuzz.token_sort_ratio(poppiText, match.lower())))
-    #    print(match + ": " + str(fuzz.token_set_ratio(poppiText, match.lower())))
-
-    #print("extractOne: ",  process.extractOne(poppiText, matchList))
-    #for entry in process.extractBests(poppiText, matchList):
-    #    print("extractBests: ", entry)
-
-    #for entry in process.extract(poppiText, matchList):
-    #    print("extract: ", entry)
-   
-    #tag_scrape_file('./amazon_data/2020-11-28-SearchList.csv')
