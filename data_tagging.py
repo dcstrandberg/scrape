@@ -267,7 +267,7 @@ if __name__ == "__main__":
 
     #for i in range(5):
     #    print(productList[i])
-    3    
+    #    
     #    x = tag_data(productList[i], taggingDicts[0], taggingDicts[1], taggingDicts[2])
     #    print(x)
         

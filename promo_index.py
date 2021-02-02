@@ -12,6 +12,8 @@ import random
 import pandas as pd
 from multiprocessing import Process, Queue, Pool, Manager, Lock
 from DB_functions import pull_all_data
+from pathlib import Path
+
 
 
 #Also need to make sure that we only pull things from the DB that aren't currently "Truly Ranked"
@@ -95,17 +97,108 @@ def avgRankAndCount(df, filterKey, isProd = False):
 
 
 if __name__ == "__main__":
+    #Let's think about this -- what are the things we want to know
+    #For each keyword, what were the top 10 brands in terms of: 
+    #### Average Rank
+    #### Count of items on first page
+    
+    #For first page, what are the breakdowns of Sponsored vs Non-Sponsored
+    #### By brand
+    #### Weighted (ie the higher the rank, the more weighted the entry is)
+    #### Percentages & Counts
 
-    keywordOfInterest = 'Cereal'
+    ###Calculate Promoted Ratio for each brand, and rank
+
+
+    #keywordOfInterest = 'Cereal'
+    startDate = '2021-01-01' #date(2021, 1, 1)
+    endDate = '2021-01-15'#date(2021, 1, 15)
+
+    figPath = Path("./outputs/")
+
+
 
     df = pd.DataFrame( pull_all_data() )
+
+    keywordList = list( set( df['Keyword'] ))
+
+    for aKey in keywordList: 
+        #Clear off the plot so we can plot new stuff on it
+        plt.clf()
+
+        #For each keyword, let's get the data 
+        keyDF = df[  df['Keyword'] == aKey ].copy()
+        keyDF = keyDF[ keyDF['Date'] >= startDate ]
+        keyDF = keyDF[ keyDF['Date'] < endDate ]
+        keyDF = keyDF[ keyDF['Brand'] != ""]
+
+        
+        #Let's first figure out how many items by brand are on page q1
+        pagePivot = pd.pivot_table(keyDF, values='Page', index='Brand', aggfunc=np.count_nonzero, fill_value=0)
+        #pagePivot = pagePivot.reset_index()
+
+
+        #rankedDF = defineTrueRankings(keyDF)
+
+        #I think essentially now we just need to make lots of pivots?
+        if len(pagePivot.values) > 0:
+
+            if 'Page' in pagePivot.columns: 
+                pagePivot.sort_values('Page', ascending=False, inplace=True)
+                headPivot = pagePivot.head(10)
+                
+                xBrand = list( headPivot['Page'] )
+
+                yBrand = list( np.arange(len(headPivot.index))[::-1])
+                labels = headPivot.index
+                
+                plt.rcParams.update({'font.size': 22})
+                plt.title("Keyword: " + aKey)
+                plt.barh(yBrand, xBrand, align='center', alpha=0.5)
+                plt.yticks(yBrand, labels)
+                plt.xlabel("Item Count")
+
+                #zip joins x & y coords
+                i = 0
+                for x, y in zip(xBrand, yBrand): 
+                    
+                    label = x
+
+                    plt.annotate(
+                        label,
+                        (x, y), 
+                        textcoords="offset points",
+                        xytext=(10, -5),
+                        ha="center"
+                    )
+                    i += 1
+
+               
+               
+                
+                #To make it so that no text is cut off
+                plt.tight_layout()
+
+                
+                tempPath = figPath / ( aKey + " - Brands on P1, " + startDate + " - " + endDate + ".png" )
+
+                #Save the figure
+                plt.savefig(tempPath)
+                print("Just saved fig: " + aKey)
+
+                #print(pagePivot.describe())
+
+            else: 
+                print("Cannot find page: ", aKey)
+        else: 
+            print("No data for: " + aKey)
 
     #Now we gotta have a function that does some sort of analysis 
     #I'm thinking a pivot tale  
     #Now we've got the dataframe, we need to process it
     #First we gotta sort it and get the true ranks
 
-    rankedDF = defineTrueRankings(df)
+
     #print(rankedDF.head())
 
     #Now let's Pivot the table
@@ -116,38 +209,38 @@ if __name__ == "__main__":
 
 
     #OK so now we've got a pivot table -- Not sure how to filter the data? 
-    plotDictBrand = avgRankAndCount(rankedDF, keywordOfInterest, True)
-    print("First plot")
+    #plotDictBrand = avgRankAndCount(rankedDF, keywordOfInterest, True)
+    #print("First plot")
     #plotDictProd = avgRankAndCount(rankedDF, keywordOfInterest, True)
     #print("Second plot")
 
-    xBrand = plotDictBrand['x']
-    yBrand = plotDictBrand['y']
+    #xBrand = plotDictBrand['x']
+    #yBrand = plotDictBrand['y']
 
-    plt.title("Avg Rank vs Count by Brand - Keyword: " + keywordOfInterest)
-    plt.scatter(xBrand, yBrand)
+    #plt.title("Avg Rank vs Count by Brand - Keyword: " + keywordOfInterest)
+    #plt.scatter(xBrand, yBrand)
 
     #zip joins x & y coords
-    i = 0
-    for x, y in zip(xBrand, yBrand): 
-        label = plotDictBrand['data-label'][i]
+    #i = 0
+    #for x, y in zip(xBrand, yBrand): 
+        #label = plotDictBrand['data-label'][i]
 
-        if y > 0.8 * plotDictBrand['maxY']:
-            plt.annotate(
-                label,
-                (x, y), 
-                textcoords="offset points",
-                xytext=(0, 10),
-                ha="center"
-            )
-        i += 1
+        #if y > 0.8 * plotDictBrand['maxY']:
+            #plt.annotate(
+                #label,
+                #(x, y), 
+                #textcoords="offset points",
+                #xytext=(0, 10),
+                #ha="center"
+            #)
+        #i += 1
 
-    plt.autoscale()
+    #plt.autoscale()
     
-    plt.show()
+    #plt.show()
 
-    print(plotDictBrand['x'][0:10])
-    print(plotDictBrand['y'][0:10])
+    #print(plotDictBrand['x'][0:10])
+    #print(plotDictBrand['y'][0:10])
 
 
 
